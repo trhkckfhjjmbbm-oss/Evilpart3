@@ -1,0 +1,295 @@
+--[[
+    Evil Morty Script v9.0
+    Part 3 / 3 — ПОРТАЛЬНАЯ ПУШКА + сборка.
+]]
+
+local CTX = _G.EvilMorty
+if not CTX then
+    warn("[EvilMorty] Part1 не загружен. Сначала выполни Part1_Core.lua")
+    return
+end
+
+local LP      = CTX.LP
+local camera  = CTX.camera
+local U       = CTX.utils
+local main    = CTX.main
+local gui     = CTX.gui
+local UIS     = CTX.UIS
+local Players = CTX.Players
+
+-- ============================================================
+-- МОДУЛЬ: PORTAL GUN
+-- ============================================================
+local PortalGun = {}
+PortalGun.portals = {}
+PortalGun.given   = false
+
+-- Создать портал в позиции с ориентацией по нормали
+function PortalGun.SpawnPortalAt(pos, normal)
+    -- максимум 2 портала
+    if #PortalGun.portals >= 2 then
+        local old = table.remove(PortalGun.portals, 1)
+        if old and old.Parent then old:Destroy() end
+    end
+
+    local portal = Instance.new("Part")
+    portal.Name = "EvilPortal"
+    portal.Size = Vector3.new(0.2, 8, 8)
+    portal.Color = Color3.fromRGB(255, 220, 0)
+    portal.Material = Enum.Material.Neon
+    portal.Transparency = 0.15
+    portal.CanCollide = false
+    portal.Anchored = true
+    portal.CanQuery = false
+
+    -- Ориентация по нормали
+    local up = normal.Unit
+    local look = Vector3.new(0, 0, -1)
+    if math.abs(up.Y) > 0.9 then look = Vector3.new(1, 0, 0) end
+    local right = look:Cross(up).Unit
+    local newLook = up:Cross(right).Unit
+
+    portal.CFrame = CFrame.new(pos + normal * 0.2, pos + normal * 0.2 + newLook, up)
+    portal.Parent = workspace
+
+    local pl = Instance.new("PointLight")
+    pl.Color = Color3.fromRGB(255, 220, 0)
+    pl.Brightness = 8
+    pl.Range = 25
+    pl.Parent = portal
+
+    local attach = Instance.new("Attachment")
+    attach.Parent = portal
+
+    local emit = Instance.new("ParticleEmitter")
+    emit.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    emit.Color = ColorSequence.new(Color3.fromRGB(255, 220, 0))
+    emit.Rate = 50
+    emit.Lifetime = NumberRange.new(0.8, 1.5)
+    emit.Speed = NumberRange.new(2, 4)
+    emit.Size = NumberSequence.new(0.4)
+    emit.LightEmission = 1
+    emit.Parent = attach
+
+    table.insert(PortalGun.portals, portal)
+
+    -- автоудаление через 20 секунд
+    task.delay(20, function()
+        if portal and portal.Parent then portal:Destroy() end
+    end)
+
+    return portal
+end
+
+-- Стрельба из точки экрана
+function PortalGun.ShootFromScreen(x, y)
+    local ray = camera:ViewportPointToRay(x, y)
+    local hit, hitPos, hitNormal = U.raycast(ray.Origin, ray.Direction * 500)
+
+    if hit then
+        PortalGun.SpawnPortalAt(hitPos, hitNormal)
+    else
+        local hrp = U.getHRP(LP)
+        if hrp then
+            local front = hrp.CFrame.Position + hrp.CFrame.LookVector * 15
+            local safe = U.raycastGround(front)
+            PortalGun.SpawnPortalAt(safe, Vector3.new(0, 1, 0))
+        end
+    end
+end
+
+-- Дать Tool игроку
+function PortalGun.Give()
+    local char = LP.Character
+    if not char then return end
+    local backpack = LP:FindFirstChildOfClass("Backpack")
+    if not backpack then return end
+
+    -- если Tool уже есть — просто экипируем
+    local existing = backpack:FindFirstChild("Portal Gun") or char:FindFirstChild("Portal Gun")
+    if existing then
+        existing.Parent = char
+        PortalGun.given = true
+        return
+    end
+
+    local tool = Instance.new("Tool")
+    tool.Name = "Portal Gun"
+    tool.RequiresHandle = true
+    tool.CanBeDropped = false
+    tool.ToolTip = "Evil Morty Portal Gun"
+
+    -- Handle
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(1.2, 1.2, 3)
+    handle.Color = Color3.fromRGB(40, 40, 40)
+    handle.Material = Enum.Material.Metal
+    handle.Parent = tool
+
+    -- Barrel
+    local barrel = Instance.new("Part")
+    barrel.Name = "Barrel"
+    barrel.Size = Vector3.new(0.8, 0.8, 2)
+    barrel.Color = Color3.fromRGB(70, 70, 70)
+    barrel.Material = Enum.Material.Metal
+    barrel.CanCollide = false
+    barrel.Parent = tool
+
+    local weldB = Instance.new("Weld")
+    weldB.Part0 = handle
+    weldB.Part1 = barrel
+    weldB.C0 = CFrame.new(0, 0, -1.5)
+    weldB.Parent = barrel
+
+    -- Tip (жёлтый)
+    local tip = Instance.new("Part")
+    tip.Name = "Tip"
+    tip.Size = Vector3.new(0.9, 0.9, 0.9)
+    tip.Color = Color3.fromRGB(255, 220, 0)
+    tip.Material = Enum.Material.Neon
+    tip.Shape = Enum.PartType.Ball
+    tip.CanCollide = false
+    tip.Parent = tool
+
+    local weldT = Instance.new("Weld")
+    weldT.Part0 = handle
+    weldT.Part1 = tip
+    weldT.C0 = CFrame.new(0, 0, -2.8)
+    weldT.Parent = tip
+
+    local tipLight = Instance.new("PointLight")
+    tipLight.Color = Color3.fromRGB(255, 220, 0)
+    tipLight.Brightness = 6
+    tipLight.Range = 12
+    tipLight.Parent = tip
+
+    local attach = Instance.new("Attachment")
+    attach.Parent = tip
+
+    local particles = Instance.new("ParticleEmitter")
+    particles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    particles.Color = ColorSequence.new(Color3.fromRGB(255, 220, 0))
+    particles.Rate = 30
+    particles.Lifetime = NumberRange.new(0.5, 1)
+    particles.Speed = NumberRange.new(1, 2)
+    particles.Size = NumberSequence.new(0.2)
+    particles.LightEmission = 1
+    particles.Parent = attach
+
+    -- LocalScript ВНУТРИ Tool — стрельба по тапу
+    local ls = Instance.new("LocalScript")
+    ls.Name = "PortalGunFire"
+    ls.Source = [==[
+        local tool = script.Parent
+        local UIS = game:GetService("UserInputService")
+        local camera = workspace.CurrentCamera
+        local player = game:GetService("Players").LocalPlayer
+
+        local function spawnPortal(pos, normal)
+            local p = Instance.new("Part")
+            p.Name = "EvilPortal"
+            p.Size = Vector3.new(0.2, 8, 8)
+            p.Color = Color3.fromRGB(255, 220, 0)
+            p.Material = Enum.Material.Neon
+            p.Transparency = 0.15
+            p.CanCollide = false
+            p.Anchored = true
+            p.CanQuery = false
+
+            local up = normal.Unit
+            local look = Vector3.new(0, 0, -1)
+            if math.abs(up.Y) > 0.9 then look = Vector3.new(1, 0, 0) end
+            local right = look:Cross(up).Unit
+            local newLook = up:Cross(right).Unit
+            p.CFrame = CFrame.new(pos + normal * 0.2, pos + normal * 0.2 + newLook, up)
+            p.Parent = workspace
+
+            local pl = Instance.new("PointLight")
+            pl.Color = Color3.fromRGB(255, 220, 0)
+            pl.Brightness = 8
+            pl.Range = 25
+            pl.Parent = p
+        end
+
+        local function shoot(x, y)
+            local ray = camera:ViewportPointToRay(x, y)
+            local ignore = player.Character and {player.Character} or {}
+            local r = Ray.new(ray.Origin, ray.Direction * 500)
+            local hit, hitPos, hitNormal = workspace:FindPartOnRayWithIgnoreList(r, ignore)
+            if hit then
+                spawnPortal(hitPos, hitNormal)
+            else
+                local char = player.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        spawnPortal(hrp.CFrame.Position + hrp.CFrame.LookVector * 15, Vector3.new(0,1,0))
+                    end
+                end
+            end
+        end
+
+        UIS.InputBegan:Connect(function(input, processed)
+            if processed then return end
+            if tool.Parent ~= player.Character then return end
+            if input.UserInputType == Enum.UserInputType.Touch then
+                local objs = player.PlayerGui:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y)
+                for _, g in pairs(objs) do
+                    if g:IsA("GuiObject") then return end
+                end
+                shoot(input.Position.X, input.Position.Y)
+            end
+        end)
+
+        tool.Activated:Connect(function()
+            local vps = camera.ViewportSize
+            shoot(vps.X / 2, vps.Y / 2)
+        end)
+    ]==]
+    ls.Parent = tool
+
+    tool.Parent = char
+    PortalGun.given = true
+end
+
+function PortalGun.GetLastPortal()
+    if #PortalGun.portals == 0 then return nil end
+    for i = #PortalGun.portals, 1, -1 do
+        local p = PortalGun.portals[i]
+        if p and p.Parent then return p end
+    end
+    return nil
+end
+
+function PortalGun.GetPortals()
+    return PortalGun.portals
+end
+
+function PortalGun.Init() end
+
+CTX.modules.PortalGun = PortalGun
+
+-- Кнопка в меню
+local y = 240
+U.makeButton(main, "Выдать портальную пушку", y, function()
+    PortalGun.Give()
+end)
+
+-- ============================================================
+-- ФИНАЛЬНАЯ СБОРКА
+-- ============================================================
+CTX.log("Part3 загружен. PortalGun активен.")
+CTX.log("=====================================")
+CTX.log("EVIL MORTY v" .. CTX.VERSION .. " ПОЛНОСТЬЮ ЗАГРУЖЕН")
+CTX.log("Модули: Scanner, Highlight, Teleport, Shield, PortalGun")
+CTX.log("=====================================")
+
+-- Стартовое уведомление
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Evil Morty v" .. CTX.VERSION,
+        Text = "Скрипт загружен. Нажми EM в углу.",
+        Duration = 4
+    })
+end)
