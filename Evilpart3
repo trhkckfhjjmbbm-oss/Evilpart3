@@ -1,253 +1,329 @@
 --[[
-    Evil Morty Script v10.0
-    Part 3 / 3 — ПОРТАЛЬНАЯ ПУШКА (рабочая версия).
-    Ключевые фиксы:
-    - Тап по экрану перехватывается в MAIN-скрипте (Part1), а не в Tool.
-    - Портал появляется в точке тапа, ориентирован по нормали.
-    - Плюс кнопка "ОГОНЬ" на экране, когда Tool в руке.
-    - Плюс поддержка tool.Activated на всякий случай.
+    Evil Morty Script v11.0 — Part 3/3
+    PORTAL GUN + ГОЛОГРАММА + ESP + FLIGHT + SPEED + NOCLIP + AUTOTAP.
 ]]
 
-local CTX = _G.EvilMorty
-if not CTX then
-    warn("[EvilMorty] Part1 не загружен. Сначала выполни Part1")
-    return
-end
+local C=_G.EvilMorty
+if not C then warn("[EM] Part1 не загружен") return end
+local LP=C.LP; local cam=C.cam; local U=C.utils
+local RunService=C.RunService
+local scroll=C.scroll
 
-local LP      = CTX.LP
-local camera  = CTX.camera
-local U       = CTX.utils
-local main    = CTX.main
-local gui     = CTX.gui
-local UIS     = CTX.UIS
+local function addBtn(text,cb) return U.btn(scroll,text,#scroll:GetChildren()*48,cb) end
 
--- ============================================================
--- МОДУЛЬ: PORTAL GUN
--- ============================================================
-local PortalGun = {}
-PortalGun.portals = {}
-PortalGun.given = false
-PortalGun.equipped = false
+-- ============ PORTAL GUN ============
+local PG={portals={},given=false,equipped=false}
 
--- Создать портал
-function PortalGun.SpawnPortalAt(pos, normal)
-    if #PortalGun.portals >= 2 then
-        local old = table.remove(PortalGun.portals, 1)
+function PG.SpawnPortalAt(pos,normal)
+    if #PG.portals>=2 then
+        local old=table.remove(PG.portals,1)
         if old and old.Parent then old:Destroy() end
     end
-
-    local portal = Instance.new("Part")
-    portal.Name = "EvilPortal"
-    portal.Size = Vector3.new(0.2, 8, 8)
-    portal.Color = Color3.fromRGB(255, 220, 0)
-    portal.Material = Enum.Material.Neon
-    portal.Transparency = 0.15
-    portal.CanCollide = false
-    portal.Anchored = true
-    portal.CanQuery = false
-
-    local up = normal.Unit
-    local look = Vector3.new(0, 0, -1)
-    if math.abs(up.Y) > 0.9 then look = Vector3.new(1, 0, 0) end
-    local right = look:Cross(up).Unit
-    local newLook = up:Cross(right).Unit
-
-    portal.CFrame = CFrame.new(pos + normal * 0.2, pos + normal * 0.2 + newLook, up)
-    portal.Parent = workspace
-
-    local pl = Instance.new("PointLight")
-    pl.Color = Color3.fromRGB(255, 220, 0)
-    pl.Brightness = 8
-    pl.Range = 25
-    pl.Parent = portal
-
-    local attach = Instance.new("Attachment")
-    attach.Parent = portal
-
-    local emit = Instance.new("ParticleEmitter")
-    emit.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-    emit.Color = ColorSequence.new(Color3.fromRGB(255, 220, 0))
-    emit.Rate = 50
-    emit.Lifetime = NumberRange.new(0.8, 1.5)
-    emit.Speed = NumberRange.new(2, 4)
-    emit.Size = NumberSequence.new(0.4)
-    emit.LightEmission = 1
-    emit.Parent = attach
-
-    table.insert(PortalGun.portals, portal)
-
-    task.delay(20, function()
-        if portal and portal.Parent then portal:Destroy() end
-    end)
-
-    return portal
+    local p=Instance.new("Part")
+    p.Name="EM_Portal"; p.Size=Vector3.new(0.2,8,8)
+    p.Color=Color3.fromRGB(255,220,0); p.Material=Enum.Material.Neon
+    p.Transparency=0.15; p.CanCollide=false; p.Anchored=true; p.CanQuery=false
+    local up=normal.Unit
+    local look=Vector3.new(0,0,-1)
+    if math.abs(up.Y)>0.9 then look=Vector3.new(1,0,0) end
+    local right=look:Cross(up).Unit
+    local nl=up:Cross(right).Unit
+    p.CFrame=CFrame.new(pos+normal*0.2,pos+normal*0.2+nl,up)
+    p.Parent=workspace
+    local l=Instance.new("PointLight")
+    l.Color=Color3.fromRGB(255,220,0); l.Brightness=8; l.Range=25; l.Parent=p
+    local a=Instance.new("Attachment"); a.Parent=p
+    local e=Instance.new("ParticleEmitter")
+    e.Texture="rbxasset://textures/particles/sparkles_main.dds"
+    e.Color=ColorSequence.new(Color3.fromRGB(255,220,0))
+    e.Rate=50; e.Lifetime=NumberRange.new(0.8,1.5)
+    e.Speed=NumberRange.new(2,4); e.Size=NumberSequence.new(0.4)
+    e.LightEmission=1; e.Parent=a
+    table.insert(PG.portals,p)
+    task.delay(20,function() if p and p.Parent then p:Destroy() end end)
 end
 
--- Стрельба из точки экрана
-function PortalGun.ShootFromScreen(x, y)
-    local ray = camera:ViewportPointToRay(x, y)
-    local hit, hitPos, hitNormal = U.raycast(ray.Origin, ray.Direction * 500)
-
-    if hit then
-        PortalGun.SpawnPortalAt(hitPos, hitNormal)
+function PG.ShootFromScreen(x,y)
+    local ray=cam:ViewportPointToRay(x,y)
+    local hit,hp,hn=U.ray(ray.Origin,ray.Direction*500)
+    if hit then PG.SpawnPortalAt(hp,hn)
     else
-        local hrp = U.getHRP(LP)
+        local hrp=U.getHRP(LP)
         if hrp then
-            local front = hrp.CFrame.Position + hrp.CFrame.LookVector * 15
-            local safe = U.raycastGround(front)
-            PortalGun.SpawnPortalAt(safe, Vector3.new(0, 1, 0))
+            local front=hrp.CFrame.Position+hrp.CFrame.LookVector*15
+            local safe=U.rayGround(front)
+            PG.SpawnPortalAt(safe,Vector3.new(0,1,0))
         end
     end
 end
 
--- Стрельба в центр камеры (для кнопки "ОГОНЬ")
-function PortalGun.ShootFromCameraCenter()
-    local vps = camera.ViewportSize
-    PortalGun.ShootFromScreen(vps.X / 2, vps.Y / 2)
+function PG.ShootFromCameraCenter()
+    local v=cam.ViewportSize
+    PG.ShootFromScreen(v.X/2,v.Y/2)
 end
 
--- Регистрируем обработчик тапа в CTX (вызывается из Part1)
-table.insert(CTX.tapHandlers, function(x, y)
-    if PortalGun.equipped then
-        PortalGun.ShootFromScreen(x, y)
-    end
+table.insert(C.tapHandlers,function(x,y)
+    if PG.equipped then PG.ShootFromScreen(x,y) end
 end)
 
--- Дать Tool
-function PortalGun.Give()
-    local char = LP.Character
-    if not char then return end
-    local backpack = LP:FindFirstChildOfClass("Backpack")
-    if not backpack then return end
-
-    local existing = backpack:FindFirstChild("Portal Gun") or char:FindFirstChild("Portal Gun")
-    if existing then
-        existing.Parent = char
-        PortalGun.given = true
-        return
-    end
-
-    local tool = Instance.new("Tool")
-    tool.Name = "Portal Gun"
-    tool.RequiresHandle = true
-    tool.CanBeDropped = false
-    tool.ToolTip = "Evil Morty Portal Gun"
-
-    local handle = Instance.new("Part")
-    handle.Name = "Handle"
-    handle.Size = Vector3.new(1.2, 1.2, 3)
-    handle.Color = Color3.fromRGB(40, 40, 40)
-    handle.Material = Enum.Material.Metal
-    handle.Parent = tool
-
-    local barrel = Instance.new("Part")
-    barrel.Name = "Barrel"
-    barrel.Size = Vector3.new(0.8, 0.8, 2)
-    barrel.Color = Color3.fromRGB(70, 70, 70)
-    barrel.Material = Enum.Material.Metal
-    barrel.CanCollide = false
-    barrel.Parent = tool
-
-    local weldB = Instance.new("Weld")
-    weldB.Part0 = handle
-    weldB.Part1 = barrel
-    weldB.C0 = CFrame.new(0, 0, -1.5)
-    weldB.Parent = barrel
-
-    local tip = Instance.new("Part")
-    tip.Name = "Tip"
-    tip.Size = Vector3.new(0.9, 0.9, 0.9)
-    tip.Color = Color3.fromRGB(255, 220, 0)
-    tip.Material = Enum.Material.Neon
-    tip.Shape = Enum.PartType.Ball
-    tip.CanCollide = false
-    tip.Parent = tool
-
-    local weldT = Instance.new("Weld")
-    weldT.Part0 = handle
-    weldT.Part1 = tip
-    weldT.C0 = CFrame.new(0, 0, -2.8)
-    weldT.Parent = tip
-
-    local tipLight = Instance.new("PointLight")
-    tipLight.Color = Color3.fromRGB(255, 220, 0)
-    tipLight.Brightness = 6
-    tipLight.Range = 12
-    tipLight.Parent = tip
-
-    local attach = Instance.new("Attachment")
-    attach.Parent = tip
-
-    local particles = Instance.new("ParticleEmitter")
-    particles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-    particles.Color = ColorSequence.new(Color3.fromRGB(255, 220, 0))
-    particles.Rate = 30
-    particles.Lifetime = NumberRange.new(0.5, 1)
-    particles.Speed = NumberRange.new(1, 2)
-    particles.Size = NumberSequence.new(0.2)
-    particles.LightEmission = 1
-    particles.Parent = attach
-
-    -- Экипировка: включаем флаг + показываем кнопку "ОГОНЬ"
+function PG.Give()
+    local ch=LP.Character; if not ch then return end
+    local bp=LP:FindFirstChildOfClass("Backpack"); if not bp then return end
+    local ex=bp:FindFirstChild("Portal Gun") or ch:FindFirstChild("Portal Gun")
+    if ex then ex.Parent=ch PG.given=true return end
+    local tool=Instance.new("Tool")
+    tool.Name="Portal Gun"; tool.RequiresHandle=true
+    tool.CanBeDropped=false; tool.ToolTip="Evil Morty Portal Gun"
+    local h=Instance.new("Part")
+    h.Name="Handle"; h.Size=Vector3.new(1.2,1.2,3)
+    h.Color=Color3.fromRGB(40,40,40); h.Material=Enum.Material.Metal
+    h.Parent=tool
+    local b=Instance.new("Part")
+    b.Name="Barrel"; b.Size=Vector3.new(0.8,0.8,2)
+    b.Color=Color3.fromRGB(70,70,70); b.Material=Enum.Material.Metal
+    b.CanCollide=false; b.Parent=tool
+    local wb=Instance.new("Weld")
+    wb.Part0=h; wb.Part1=b; wb.C0=CFrame.new(0,0,-1.5); wb.Parent=b
+    local t=Instance.new("Part")
+    t.Name="Tip"; t.Size=Vector3.new(0.9,0.9,0.9)
+    t.Color=Color3.fromRGB(255,220,0); t.Material=Enum.Material.Neon
+    t.Shape=Enum.PartType.Ball; t.CanCollide=false; t.Parent=tool
+    local wt=Instance.new("Weld")
+    wt.Part0=h; wt.Part1=t; wt.C0=CFrame.new(0,0,-2.8); wt.Parent=t
+    local tl=Instance.new("PointLight")
+    tl.Color=Color3.fromRGB(255,220,0); tl.Brightness=6; tl.Range=12; tl.Parent=t
     tool.Equipped:Connect(function()
-        PortalGun.equipped = true
-        if CTX.fireBtn then CTX.fireBtn.Visible = true end
+        PG.equipped=true
+        if C.fireBtn then C.fireBtn.Visible=true end
     end)
     tool.Unequipped:Connect(function()
-        PortalGun.equipped = false
-        if CTX.fireBtn then CTX.fireBtn.Visible = false end
+        PG.equipped=false
+        if C.fireBtn then C.fireBtn.Visible=false end
     end)
-
-    -- Дублирующий триггер через Activated
-    tool.Activated:Connect(function()
-        PortalGun.ShootFromCameraCenter()
-    end)
-
-    tool.Parent = char
-    PortalGun.given = true
+    tool.Activated:Connect(function() PG.ShootFromCameraCenter() end)
+    tool.Parent=ch
+    PG.given=true
 end
 
-function PortalGun.GetLastPortal()
-    if #PortalGun.portals == 0 then return nil end
-    for i = #PortalGun.portals, 1, -1 do
-        local p = PortalGun.portals[i]
+function PG.GetLastPortal()
+    for i=#PG.portals,1,-1 do
+        local p=PG.portals[i]
         if p and p.Parent then return p end
     end
     return nil
 end
 
-function PortalGun.GetPortals()
-    return PortalGun.portals
+function PG.Init() end
+C.modules.PortalGun=PG
+
+-- ============ ГОЛОГРАММА ЗЛОГО МОРТИ ============
+local Holo={enabled=false,parts={}}
+function Holo.Make()
+    Holo.Destroy()
+    local ch=LP.Character; if not ch then return end
+    local hrp=ch:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    -- Голографический двойник: полупрозрачный неоновый силуэт
+    local r15=ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso")
+    local head=ch:FindFirstChild("Head")
+    if not r15 or not head then return end
+    local body=Instance.new("Part")
+    body.Name="EM_Holo_Body"; body.Size=Vector3.new(2,2,1)
+    body.Material=Enum.Material.ForceField
+    body.Color=Color3.fromRGB(0,255,200); body.Transparency=0.6
+    body.CanCollide=false; body.Anchored=false
+    body.CFrame=r15.CFrame; body.Parent=ch
+    local wb=Instance.new("Weld")
+    wb.Part0=r15; wb.Part1=body; wb.C0=CFrame.new(); wb.C1=CFrame.new(); wb.Parent=body
+    local hh=Instance.new("Part")
+    hh.Name="EM_Holo_Head"; hh.Shape=Enum.PartType.Ball
+    hh.Size=Vector3.new(1.4,1.4,1.4)
+    hh.Material=Enum.Material.ForceField
+    hh.Color=Color3.fromRGB(0,255,200); hh.Transparency=0.5
+    hh.CanCollide=false; hh.CFrame=head.CFrame; hh.Parent=ch
+    local wh=Instance.new("Weld")
+    wh.Part0=head; wh.Part1=hh; wh.C0=CFrame.new(); wh.C1=CFrame.new(); wh.Parent=hh
+    local l1=Instance.new("PointLight")
+    l1.Color=Color3.fromRGB(0,255,200); l1.Brightness=4; l1.Range=12; l1.Parent=body
+    local l2=Instance.new("PointLight")
+    l2.Color=Color3.fromRGB(0,255,200); l2.Brightness=3; l2.Range=8; l2.Parent=hh
+    table.insert(Holo.parts,body); table.insert(Holo.parts,hh)
+end
+function Holo.Destroy()
+    for _,p in pairs(Holo.parts) do
+        if p and p.Parent then p:Destroy() end
+    end
+    Holo.parts={}
+end
+function Holo.Enable() Holo.enabled=true Holo.Make() end
+function Holo.Disable() Holo.enabled=false Holo.Destroy() end
+function Holo.Toggle() if Holo.enabled then Holo.Disable() else Holo.Enable() end end
+function Holo.Init()
+    LP.CharacterAdded:Connect(function()
+        if Holo.enabled then task.wait(1) Holo.Make() end
+    end)
 end
 
-function PortalGun.Init() end
+-- ============ ESP (дистанция над игроками) ============
+local ESP={enabled=false}
+function ESP.Init()
+    spawn(function()
+        while task.wait(0.4) do
+            for _,p in pairs(C.Players:GetPlayers()) do
+                if p==LP then continue end
+                local ch=p.Character; if not ch then continue end
+                local hrp=ch:FindFirstChild("HumanoidRootPart")
+                local head=ch:FindFirstChild("Head")
+                if not hrp or not head then continue end
+                local tag=head:FindFirstChild("EM_ESP")
+                if ESP.enabled then
+                    if not tag then
+                        local bb=Instance.new("BillboardGui")
+                        bb.Name="EM_ESP"; bb.Size=UDim2.new(0,120,0,20)
+                        bb.StudsOffset=Vector3.new(0,4.5,0); bb.AlwaysOnTop=true
+                        bb.Parent=head
+                        local t=Instance.new("TextLabel")
+                        t.Size=UDim2.new(1,0,1,0); t.BackgroundTransparency=1
+                        t.TextColor3=Color3.fromRGB(0,255,255)
+                        t.Font=Enum.Font.Code; t.TextSize=13
+                        t.Text=""; t.Parent=bb
+                    end
+                    local myHrp=U.getHRP(LP)
+                    if myHrp and tag then
+                        local dist=(hrp.Position-myHrp.Position).Magnitude
+                        tag.TextLabel.Text=math.floor(dist).." studs"
+                    end
+                else
+                    if tag then tag:Destroy() end
+                end
+            end
+        end
+    end)
+end
+function ESP.Enable() ESP.enabled=true end
+function ESP.Disable() ESP.enabled=false end
+function ESP.Toggle() if ESP.enabled then ESP.Disable() else ESP.Enable() end end
 
-CTX.modules.PortalGun = PortalGun
+-- ============ FLIGHT ============
+local Fly={enabled=false,conn=nil}
+function Fly.Enable()
+    local ch=LP.Character; if not ch then return end
+    local hrp=ch:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    Fly.enabled=true
+    local bodyVel=Instance.new("BodyVelocity")
+    bodyVel.Name="EM_FlyVel"; bodyVel.MaxForce=Vector3.new(1e5,1e5,1e5)
+    bodyVel.Velocity=Vector3.new(0,0,0); bodyVel.Parent=hrp
+    local bg=Instance.new("BodyGyro")
+    bg.Name="EM_FlyGyro"; bg.MaxTorque=Vector3.new(1e5,1e5,1e5)
+    bg.P=1000; bg.D=50; bg.CFrame=hrp.CFrame; bg.Parent=hrp
+    Fly.conn=RunService.RenderStepped:Connect(function()
+        if not Fly.enabled then return end
+        local c=LP.Character; if not c then return end
+        local h=c:FindFirstChild("HumanoidRootPart"); if not h then return end
+        local dir=Vector3.new(0,0,0)
+        local cf=cam.CFrame
+        if C.UIS:IsKeyDown(Enum.KeyCode.W) then dir=dir+cf.LookVector end
+        if C.UIS:IsKeyDown(Enum.KeyCode.S) then dir=dir-cf.LookVector end
+        if C.UIS:IsKeyDown(Enum.KeyCode.A) then dir=dir-cf.RightVector end
+        if C.UIS:IsKeyDown(Enum.KeyCode.D) then dir=dir+cf.RightVector end
+        if dir.Magnitude>0 then dir=dir.Unit end
+        local v=hrp:FindFirstChild("EM_FlyVel")
+        local g=hrp:FindFirstChild("EM_FlyGyro")
+        if v then v.Velocity=dir*60+Vector3.new(0,10,0) end
+        if g then g.CFrame=cf end
+    end)
+end
+function Fly.Disable()
+    Fly.enabled=false
+    if Fly.conn then Fly.conn:Disconnect() Fly.conn=nil end
+    local ch=LP.Character; if not ch then return end
+    local hrp=ch:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    if hrp:FindFirstChild("EM_FlyVel") then hrp.EM_FlyVel:Destroy() end
+    if hrp:FindFirstChild("EM_FlyGyro") then hrp.EM_FlyGyro:Destroy() end
+end
+function Fly.Toggle() if Fly.enabled then Fly.Disable() else Fly.Enable() end end
 
--- Кнопка в меню
-local y = 240
-U.makeButton(main, "Выдать портальную пушку", y, function()
-    PortalGun.Give()
+-- ============ SPEED ============
+local Speed={enabled=false,val=16}
+function Speed.Set(v)
+    Speed.val=v
+    local ch=LP.Character; if not ch then return end
+    local hum=ch:FindFirstChildOfClass("Humanoid"); if not hum then return end
+    hum.WalkSpeed=v
+end
+function Speed.Enable() Speed.enabled=true Speed.Set(120) end
+function Speed.Disable() Speed.enabled=false Speed.Set(16) end
+function Speed.Toggle() if Speed.enabled then Speed.Disable() else Speed.Enable() end end
+
+-- ============ NOCLIP ============
+local Noclip={enabled=false,conn=nil}
+function Noclip.Enable()
+    Noclip.enabled=true
+    Noclip.conn=RunService.Stepped:Connect(function()
+        local ch=LP.Character; if not ch then return end
+        for _,p in pairs(ch:GetDescendants()) do
+            if p:IsA("BasePart") and p.CanCollide then
+                p.CanCollide=false
+            end
+        end
+    end)
+end
+function Noclip.Disable()
+    Noclip.enabled=false
+    if Noclip.conn then Noclip.conn:Disconnect() Noclip.conn=nil end
+end
+function Noclip.Toggle() if Noclip.enabled then Noclip.Disable() else Noclip.Enable() end end
+
+-- ============ AUTO TAP ============
+local AutoTap={enabled=false,conn=nil}
+function AutoTap.Enable()
+    AutoTap.enabled=true
+    local vu=game:GetService("VirtualUser")
+    AutoTap.conn=RunService.Heartbeat:Connect(function()
+        pcall(function() vu:CaptureController() vu:ClickButton2(Vector2.new()) end)
+    end)
+end
+function AutoTap.Disable()
+    AutoTap.enabled=false
+    if AutoTap.conn then AutoTap.conn:Disconnect() AutoTap.conn=nil end
+end
+function AutoTap.Toggle() if AutoTap.enabled then AutoTap.Disable() else AutoTap.Enable() end end
+
+Holo.Init(); ESP.Init()
+
+C.modules.Hologram=Holo
+C.modules.ESP=ESP
+C.modules.Fly=Fly
+C.modules.Speed=Speed
+C.modules.Noclip=Noclip
+C.modules.AutoTap=AutoTap
+
+addBtn("Выдать портальную пушку",function() PG.Give() end)
+addBtn("Огонь в центр",function() PG.ShootFromCameraCenter() end)
+addBtn("Голограмма: ВЫКЛ",function(b)
+    Holo.Toggle(); b.Text="Голограмма: "..(Holo.enabled and "ВКЛ" or "ВЫКЛ")
 end)
-y = y + 50
-
-U.makeButton(main, "Огонь в центр", y, function()
-    PortalGun.ShootFromCameraCenter()
+addBtn("ESP дистанция: ВЫКЛ",function(b)
+    ESP.Toggle(); b.Text="ESP дистанция: "..(ESP.enabled and "ВКЛ" or "ВЫКЛ")
+end)
+addBtn("Полёт: ВЫКЛ",function(b)
+    Fly.Toggle(); b.Text="Полёт: "..(Fly.enabled and "ВКЛ" or "ВЫКЛ")
+end)
+addBtn("Спидхак: ВЫКЛ",function(b)
+    Speed.Toggle(); b.Text="Спидхак: "..(Speed.enabled and "ВКЛ" or "ВЫКЛ")
+end)
+addBtn("Noclip: ВЫКЛ",function(b)
+    Noclip.Toggle(); b.Text="Noclip: "..(Noclip.enabled and "ВКЛ" or "ВЫКЛ")
+end)
+addBtn("AutoTap: ВЫКЛ",function(b)
+    AutoTap.Toggle(); b.Text="AutoTap: "..(AutoTap.enabled and "ВКЛ" or "ВЫКЛ")
 end)
 
--- ============================================================
--- ФИНАЛЬНАЯ СБОРКА
--- ============================================================
-CTX.log("Part3 загружен. PortalGun активен.")
-CTX.log("=====================================")
-CTX.log("EVIL MORTY v" .. CTX.VERSION .. " ПОЛНОСТЬЮ ЗАГРУЖЕН")
-CTX.log("Модули: Scanner, Highlight, Teleport, Shield, PortalGun")
-CTX.log("=====================================")
+C.log("Part3 OK. v"..C.VERSION.." полностью загружен.")
 
 pcall(function()
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Evil Morty v" .. CTX.VERSION,
-        Text = "Загружен. Нажми EM в углу.",
-        Duration = 4
+    game:GetService("StarterGui"):SetCore("SendNotification",{
+        Title="Evil Morty v"..C.VERSION,
+        Text="Скрипт загружен. Нажми EM.",
+        Duration=4
     })
 end)
