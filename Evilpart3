@@ -86,4 +86,168 @@ end
 -- Стрельба из точки экрана
 function PortalGun.ShootFromScreen(x, y)
     local ray = camera:ViewportPointToRay(x, y)
-    local hit, hitPos, hitNormal
+    local hit, hitPos, hitNormal = U.raycast(ray.Origin, ray.Direction * 500)
+
+    if hit then
+        PortalGun.SpawnPortalAt(hitPos, hitNormal)
+    else
+        local hrp = U.getHRP(LP)
+        if hrp then
+            local front = hrp.CFrame.Position + hrp.CFrame.LookVector * 15
+            local safe = U.raycastGround(front)
+            PortalGun.SpawnPortalAt(safe, Vector3.new(0, 1, 0))
+        end
+    end
+end
+
+-- Стрельба в центр камеры (для кнопки "ОГОНЬ")
+function PortalGun.ShootFromCameraCenter()
+    local vps = camera.ViewportSize
+    PortalGun.ShootFromScreen(vps.X / 2, vps.Y / 2)
+end
+
+-- Регистрируем обработчик тапа в CTX (вызывается из Part1)
+table.insert(CTX.tapHandlers, function(x, y)
+    if PortalGun.equipped then
+        PortalGun.ShootFromScreen(x, y)
+    end
+end)
+
+-- Дать Tool
+function PortalGun.Give()
+    local char = LP.Character
+    if not char then return end
+    local backpack = LP:FindFirstChildOfClass("Backpack")
+    if not backpack then return end
+
+    local existing = backpack:FindFirstChild("Portal Gun") or char:FindFirstChild("Portal Gun")
+    if existing then
+        existing.Parent = char
+        PortalGun.given = true
+        return
+    end
+
+    local tool = Instance.new("Tool")
+    tool.Name = "Portal Gun"
+    tool.RequiresHandle = true
+    tool.CanBeDropped = false
+    tool.ToolTip = "Evil Morty Portal Gun"
+
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(1.2, 1.2, 3)
+    handle.Color = Color3.fromRGB(40, 40, 40)
+    handle.Material = Enum.Material.Metal
+    handle.Parent = tool
+
+    local barrel = Instance.new("Part")
+    barrel.Name = "Barrel"
+    barrel.Size = Vector3.new(0.8, 0.8, 2)
+    barrel.Color = Color3.fromRGB(70, 70, 70)
+    barrel.Material = Enum.Material.Metal
+    barrel.CanCollide = false
+    barrel.Parent = tool
+
+    local weldB = Instance.new("Weld")
+    weldB.Part0 = handle
+    weldB.Part1 = barrel
+    weldB.C0 = CFrame.new(0, 0, -1.5)
+    weldB.Parent = barrel
+
+    local tip = Instance.new("Part")
+    tip.Name = "Tip"
+    tip.Size = Vector3.new(0.9, 0.9, 0.9)
+    tip.Color = Color3.fromRGB(255, 220, 0)
+    tip.Material = Enum.Material.Neon
+    tip.Shape = Enum.PartType.Ball
+    tip.CanCollide = false
+    tip.Parent = tool
+
+    local weldT = Instance.new("Weld")
+    weldT.Part0 = handle
+    weldT.Part1 = tip
+    weldT.C0 = CFrame.new(0, 0, -2.8)
+    weldT.Parent = tip
+
+    local tipLight = Instance.new("PointLight")
+    tipLight.Color = Color3.fromRGB(255, 220, 0)
+    tipLight.Brightness = 6
+    tipLight.Range = 12
+    tipLight.Parent = tip
+
+    local attach = Instance.new("Attachment")
+    attach.Parent = tip
+
+    local particles = Instance.new("ParticleEmitter")
+    particles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    particles.Color = ColorSequence.new(Color3.fromRGB(255, 220, 0))
+    particles.Rate = 30
+    particles.Lifetime = NumberRange.new(0.5, 1)
+    particles.Speed = NumberRange.new(1, 2)
+    particles.Size = NumberSequence.new(0.2)
+    particles.LightEmission = 1
+    particles.Parent = attach
+
+    -- Экипировка: включаем флаг + показываем кнопку "ОГОНЬ"
+    tool.Equipped:Connect(function()
+        PortalGun.equipped = true
+        if CTX.fireBtn then CTX.fireBtn.Visible = true end
+    end)
+    tool.Unequipped:Connect(function()
+        PortalGun.equipped = false
+        if CTX.fireBtn then CTX.fireBtn.Visible = false end
+    end)
+
+    -- Дублирующий триггер через Activated
+    tool.Activated:Connect(function()
+        PortalGun.ShootFromCameraCenter()
+    end)
+
+    tool.Parent = char
+    PortalGun.given = true
+end
+
+function PortalGun.GetLastPortal()
+    if #PortalGun.portals == 0 then return nil end
+    for i = #PortalGun.portals, 1, -1 do
+        local p = PortalGun.portals[i]
+        if p and p.Parent then return p end
+    end
+    return nil
+end
+
+function PortalGun.GetPortals()
+    return PortalGun.portals
+end
+
+function PortalGun.Init() end
+
+CTX.modules.PortalGun = PortalGun
+
+-- Кнопка в меню
+local y = 240
+U.makeButton(main, "Выдать портальную пушку", y, function()
+    PortalGun.Give()
+end)
+y = y + 50
+
+U.makeButton(main, "Огонь в центр", y, function()
+    PortalGun.ShootFromCameraCenter()
+end)
+
+-- ============================================================
+-- ФИНАЛЬНАЯ СБОРКА
+-- ============================================================
+CTX.log("Part3 загружен. PortalGun активен.")
+CTX.log("=====================================")
+CTX.log("EVIL MORTY v" .. CTX.VERSION .. " ПОЛНОСТЬЮ ЗАГРУЖЕН")
+CTX.log("Модули: Scanner, Highlight, Teleport, Shield, PortalGun")
+CTX.log("=====================================")
+
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Evil Morty v" .. CTX.VERSION,
+        Text = "Загружен. Нажми EM в углу.",
+        Duration = 4
+    })
+end)
